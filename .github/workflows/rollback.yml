@@ -1,0 +1,38 @@
+name: Rollback Production
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Known-good application version, for example 1.0.0"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  IMAGE_NAME: ghcr.io/z-zaratahir/mlops-activity-1
+
+jobs:
+  rollback:
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+    steps:
+      - name: Deploy selected known-good image
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ secrets.PRODUCTION_HOST }}
+          username: ${{ secrets.PRODUCTION_USER }}
+          key: ${{ secrets.PRODUCTION_SSH_KEY }}
+          script_stop: true
+          script: |
+            echo '${{ secrets.GHCR_TOKEN }}' | docker login ghcr.io --username '${{ secrets.GHCR_USERNAME }}' --password-stdin
+            docker pull ${{ env.IMAGE_NAME }}:${{ inputs.version }}
+            docker rm --force mlops-api 2>/dev/null || true
+            docker run --detach \
+              --name mlops-api \
+              --restart unless-stopped \
+              --publish 5000:5000 \
+              ${{ env.IMAGE_NAME }}:${{ inputs.version }}
